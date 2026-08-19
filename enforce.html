@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Application Viewer</title>
+
+    <!-- Only allow the application domain -->
+    <meta http-equiv="Content-Security-Policy"
+        content="
+            default-src 'none';
+            base-uri 'none';
+
+            frame-src https://app.hunkon.me;
+
+            connect-src https://app.hunkon.me;
+
+            form-action https://app.hunkon.me;
+
+            img-src https://app.hunkon.me data: blob:;
+
+            media-src https://app.hunkon.me blob:;
+
+            font-src https://app.hunkon.me data:;
+
+            script-src 'self' 'unsafe-inline';
+
+            style-src 'self' 'unsafe-inline';
+
+            object-src 'none';
+        ">
+
+    <style>
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+        }
+
+        body {
+            position: fixed;
+            inset: 0;
+        }
+
+        #app {
+            position: fixed;
+            top: 0;
+            left: 0;
+
+            width: 100vw;
+            height: 100vh;
+
+            margin: 0;
+            padding: 0;
+
+            border: 0;
+            outline: 0;
+
+            display: block;
+
+            background: #000;
+        }
+    </style>
+</head>
+
+<body>
+
+    <iframe
+        id="app"
+        src="https://app.hunkon.me/"
+        sandbox="
+            allow-scripts
+            allow-same-origin
+            allow-forms
+            allow-downloads
+        "
+        referrerpolicy="no-referrer"
+        loading="eager">
+    </iframe>
+
+    <script>
+        const iframe = document.getElementById("app");
+
+        const ALLOWED_HOST = "app.hunkon.me";
+        const APP_ORIGIN = "https://app.hunkon.me";
+
+        /*
+         * Check whether a URL belongs to the application.
+         */
+        function isAllowedURL(value) {
+            try {
+                const url = new URL(value, APP_ORIGIN);
+
+                return (
+                    url.protocol === "https:" &&
+                    url.hostname === ALLOWED_HOST
+                );
+            } catch {
+                return false;
+            }
+        }
+
+        /*
+         * Protect the iframe when same-origin access is available.
+         */
+        function protectIframe() {
+            try {
+                const doc = iframe.contentDocument;
+
+                if (!doc) {
+                    return;
+                }
+
+                /*
+                 * Block external links.
+                 */
+                doc.addEventListener("click", event => {
+                    const link = event.target.closest("a");
+
+                    if (!link || !link.href) {
+                        return;
+                    }
+
+                    if (!isAllowedURL(link.href)) {
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+
+                        console.warn(
+                            "Blocked external navigation:",
+                            link.href
+                        );
+                    }
+                }, true);
+
+                /*
+                 * Block external form submissions.
+                 */
+                doc.addEventListener("submit", event => {
+                    const form = event.target;
+
+                    const destination =
+                        form.action ||
+                        doc.location.href;
+
+                    if (!isAllowedURL(destination)) {
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+
+                        console.warn(
+                            "Blocked external form submission:",
+                            destination
+                        );
+                    }
+                }, true);
+
+                /*
+                 * Prevent target="_top" / target="_parent"
+                 * from escaping the iframe when possible.
+                 */
+                doc.addEventListener("click", event => {
+                    const link = event.target.closest("a");
+
+                    if (!link) {
+                        return;
+                    }
+
+                    if (
+                        link.target === "_top" ||
+                        link.target === "_parent"
+                    ) {
+                        link.target = "_self";
+                    }
+                }, true);
+
+            } catch {
+                /*
+                 * Cross-origin iframe.
+                 *
+                 * The browser intentionally prevents the
+                 * parent document from inspecting it.
+                 */
+            }
+        }
+
+        /*
+         * Re-apply protection whenever the iframe loads
+         * another application page.
+         */
+        iframe.addEventListener("load", () => {
+            protectIframe();
+        });
+
+        /*
+         * Start protection.
+         */
+        protectIframe();
+    </script>
+
+</body>
+</html>
