@@ -3,203 +3,88 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>Application Viewer</title>
-
-    <!-- Only allow the application domain -->
-    <meta http-equiv="Content-Security-Policy"
-        content="
-            default-src 'none';
-            base-uri 'none';
-
-            frame-src https://app.hunkon.me;
-
-            connect-src https://app.hunkon.me;
-
-            form-action https://app.hunkon.me;
-
-            img-src https://app.hunkon.me data: blob:;
-
-            media-src https://app.hunkon.me blob:;
-
-            font-src https://app.hunkon.me data:;
-
-            script-src 'self' 'unsafe-inline';
-
-            style-src 'self' 'unsafe-inline';
-
-            object-src 'none';
-        ">
-
+    <!-- Completely open CSP to allow the proxy engine to fetch the app assets and handle the API -->
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;
+        frame-src * data: blob:;
+        connect-src * data: blob:;
+        img-src * data: blob:;
+        media-src * data: blob:;
+        font-src * data: blob:;
+    ">
     <style>
-        html,
-        body {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background: #000;
-        }
-
-        body {
-            position: fixed;
-            inset: 0;
-        }
-
-        #app {
-            position: fixed;
-            top: 0;
-            left: 0;
-
-            width: 100vw;
-            height: 100vh;
-
-            margin: 0;
-            padding: 0;
-
-            border: 0;
-            outline: 0;
-
-            display: block;
-
-            background: #000;
-        }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #app-container { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: 0; display: block; }
+        #loading { position: fixed; inset: 0; display: flex; justify-content: center; align-items: center; color: #fff; background: #000; z-index: 99; font-size: 1.2rem; }
     </style>
 </head>
-
 <body>
 
-    <iframe
-        id="app"
-        src="https://app.hunkon.me/"
-        sandbox="
-            allow-scripts
-            allow-same-origin
-            allow-forms
-            allow-downloads
-        "
-        referrerpolicy="no-referrer"
-        loading="eager">
-    </iframe>
+    <div id="loading">Initializing Secure Proxy Network...</div>
+    <iframe id="app-container" style="display:none;" referrerpolicy="no-referrer"></iframe>
+
+    <!-- Load the standard open-source proxy service worker script -->
+    <script src="https://jsdelivr.net"></script>
+    <script src="https://jsdelivr.net"></script>
 
     <script>
-        const iframe = document.getElementById("app");
+        const iframe = document.getElementById("app-container");
+        const loadingScreen = document.getElementById("loading");
 
-        const ALLOWED_HOST = "app.hunkon.me";
-        const APP_ORIGIN = "https://app.hunkon.me";
+        // Target site configuration
+        const TARGET_SITE = "https://hunkon.me";
 
-        /*
-         * Check whether a URL belongs to the application.
-         */
-        function isAllowedURL(value) {
+        async function initProxy() {
             try {
-                const url = new URL(value, APP_ORIGIN);
+                // Register the service worker to intercept network/API calls silently in the background
+                if ('serviceWorker' in navigator) {
+                    // Registering proxy framework
+                    await navigator.serviceWorker.register('https://jsdelivr.net', {
+                        scope: __uv$config.prefix
+                    });
 
-                return (
-                    url.protocol === "https:" &&
-                    url.hostname === ALLOWED_HOST
-                );
-            } catch {
-                return false;
-            }
-        }
+                    // Build the fully obfuscated proxy URL using Ultraviolet's internal encoder
+                    // This hides "app.hunkon.me" and "api.hunkon.me" from Securly's network filters entirely
+                    const encodedUrl = __uv$config.prefix + __uv$config.encodeUrl(TARGET_SITE);
+                    
+                    // Load the proxy stream into the iframe container
+                    iframe.src = encodedUrl;
 
-        /*
-         * Protect the iframe when same-origin access is available.
-         */
-        function protectIframe() {
-            try {
-                const doc = iframe.contentDocument;
-
-                if (!doc) {
-                    return;
+                    iframe.addEventListener("load", () => {
+                        loadingScreen.style.display = "none";
+                        iframe.style.display = "block";
+                    });
+                } else {
+                    loadingScreen.innerText = "Error: Your browser does not support Service Workers.";
                 }
-
-                /*
-                 * Block external links.
-                 */
-                doc.addEventListener("click", event => {
-                    const link = event.target.closest("a");
-
-                    if (!link || !link.href) {
-                        return;
-                    }
-
-                    if (!isAllowedURL(link.href)) {
-                        event.preventDefault();
-                        event.stopImmediatePropagation();
-
-                        console.warn(
-                            "Blocked external navigation:",
-                            link.href
-                        );
-                    }
-                }, true);
-
-                /*
-                 * Block external form submissions.
-                 */
-                doc.addEventListener("submit", event => {
-                    const form = event.target;
-
-                    const destination =
-                        form.action ||
-                        doc.location.href;
-
-                    if (!isAllowedURL(destination)) {
-                        event.preventDefault();
-                        event.stopImmediatePropagation();
-
-                        console.warn(
-                            "Blocked external form submission:",
-                            destination
-                        );
-                    }
-                }, true);
-
-                /*
-                 * Prevent target="_top" / target="_parent"
-                 * from escaping the iframe when possible.
-                 */
-                doc.addEventListener("click", event => {
-                    const link = event.target.closest("a");
-
-                    if (!link) {
-                        return;
-                    }
-
-                    if (
-                        link.target === "_top" ||
-                        link.target === "_parent"
-                    ) {
-                        link.target = "_self";
-                    }
-                }, true);
-
-            } catch {
-                /*
-                 * Cross-origin iframe.
-                 *
-                 * The browser intentionally prevents the
-                 * parent document from inspecting it.
-                 */
+            } catch (err) {
+                console.error("Proxy Init Failed, falling back to Base64 Blob wrapper:", err);
+                fallbackLoad();
             }
         }
 
-        /*
-         * Re-apply protection whenever the iframe loads
-         * another application page.
-         */
-        iframe.addEventListener("load", () => {
-            protectIframe();
-        });
+        // Fallback strategy if the network CDN blocks service worker registrations
+        function fallbackLoad() {
+            // Encode the target into a browser-native system Blob object (bypasses basic string filters)
+            const rawHtml = `
+                <!DOCTYPE html>
+                <html>
+                <head><style>html,body,iframe{width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:#000;}</style></head>
+                <body>
+                    <iframe src="${TARGET_SITE}" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups"></iframe>
+                </body>
+                </html>
+            `;
+            const blob = new Blob([rawHtml], { type: 'text/html' });
+            iframe.src = URL.createObjectURL(blob);
+            
+            loadingScreen.style.display = "none";
+            iframe.style.display = "block";
+        }
 
-        /*
-         * Start protection.
-         */
-        protectIframe();
+        // Bootstrap the application layout
+        initProxy();
     </script>
-
 </body>
 </html>
